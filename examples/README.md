@@ -1,17 +1,27 @@
 # GAME SDK Examples
 
-This directory contains examples demonstrating how to use the GAME SDK.
+This directory contains examples demonstrating various aspects of the GAME SDK.
 
 ## Directory Structure
 
-- `hosted_agent/`: Examples using the hosted agent approach (recommended)
-  - `weather_example.py`: Weather reporting agent that provides weather information and clothing recommendations
-  - `example-custom.py`: Example showing how to create a custom agent
-  - `example-twitter.py`: Example showing how to create a Twitter bot
+- `basic/`: Basic examples demonstrating core functionality
+  - Weather agent examples
+  - Basic agent and worker testing
+  - Custom agent functionality
 
-- `game/`: Core SDK examples and tests
-  - `test_agent.py`: Tests for the core agent functionality
-  - `test_worker.py`: Tests for the core worker functionality
+- `error_handling/`: Examples of proper error handling
+  - General error handling patterns
+  - Network error handling
+  - Plugin error handling
+
+- `testing/`: Examples of testing practices
+  - Worker testing patterns
+  - Test organization
+
+- `advanced/`: Advanced usage examples
+  - Complex agent interactions
+  - Custom plugin development
+  - Advanced state management
 
 ## Getting Started
 
@@ -42,7 +52,7 @@ This directory contains examples demonstrating how to use the GAME SDK.
 
 4. Try running the weather example:
    ```bash
-   python hosted_agent/weather_example.py
+   python basic/example_weather_agent.py
    ```
 
 ## Example Types
