@@ -1,8 +1,10 @@
-from typing import List, Optional, Callable, Dict
+from typing import List, Optional, Callable, Dict, Any
 import uuid
 from game_sdk.game.worker import Worker
 from game_sdk.game.custom_types import Function, FunctionResult, FunctionResultStatus, ActionResponse, ActionType
 from game_sdk.game.utils import create_agent, create_workers, post
+from game_sdk.game.exceptions import ValidationError
+
 
 class Session:
     def __init__(self):
@@ -52,7 +54,7 @@ class Agent:
                  workers: Optional[List[WorkerConfig]] = None,
                  ):
 
-        self._base_url: str = "https://game.virtuals.io"
+        self._base_url: str = "https://api.virtuals.io"
         self._api_key: str = api_key
 
         # checks
@@ -76,8 +78,13 @@ class Agent:
         # get agent/task generator state function
         self.get_agent_state_fn = get_agent_state_fn
 
+        # validate state function
+        initial_state = self.get_agent_state_fn(None, None)
+        if not isinstance(initial_state, dict):
+            raise ValidationError("State function must return a dictionary")
+
         # initialize and set up agent states
-        self.agent_state = self.get_agent_state_fn(None, None)
+        self.agent_state = initial_state
 
         # create agent
         self.agent_id = create_agent(
@@ -98,14 +105,10 @@ class Agent:
         # initialize and set up worker states
         worker_states = {}
         for worker in workers_list:
-            dummy_function_result = FunctionResult(
-                action_id="",
-                action_status=FunctionResultStatus.DONE,
-                feedback_message="",
-                info={},
-            )
-            worker_states[worker.id] = worker.get_state_fn(
-                dummy_function_result, self.agent_state)
+            initial_state = worker.get_state_fn(None, None)
+            if not isinstance(initial_state, dict):
+                raise ValidationError(f"Worker {worker.id} state function must return a dictionary")
+            worker_states[worker.id] = initial_state
 
         self.worker_states = worker_states
 
