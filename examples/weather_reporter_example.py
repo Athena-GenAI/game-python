@@ -2,181 +2,160 @@
 Example of creating and testing a Weather Reporter worker.
 
 This script demonstrates how to create and test a worker that provides
-weather information and recommendations.
+weather information and recommendations using the hosted agent functionality
+from example_weather_agent.py.
+
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
+import requests
 
-from game_sdk.game.agent import Agent
+from game_sdk.hosted_game.agent import Agent, Function, FunctionArgument, FunctionConfig
 from game_sdk.game.exceptions import ValidationError, APIError
 
 # Set up logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-def create_weather_reporter(api_key: str) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
+def get_weather_handler(query: str) -> Dict[str, Any]:
+    """Handle weather requests and return formatted data."""
+    try:
+        # Fetch weather data from our example API
+        response = requests.get('https://dylanburkey.com/assets/weather.json')
+        response.raise_for_status()
+        data = response.json()
+        
+        # Extract city from query (simple approach)
+        city = query.lower().replace("what's the weather like in ", "").replace("?", "").strip()
+        
+        # Find the matching city in the weather data
+        for location in data.get("weather", []):
+            if location["location"].lower() == city.lower():
+                return {
+                    "city": city,
+                    "temperature": location["temperature"],
+                    "condition": location["condition"],
+                    "humidity": location["humidity"],
+                    "clothing": location["clothing"]
+                }
+        
+        return {"error": f"No weather data available for {city}"}
+        
+    except requests.RequestException as e:
+        logger.error(f"Failed to fetch weather data: {e}")
+        return {"error": f"Failed to fetch weather data: {str(e)}"}
+    except (KeyError, ValueError) as e:
+        logger.error(f"Invalid weather data format: {e}")
+        return {"error": f"Invalid weather data format: {str(e)}"}
+
+def create_weather_reporter(api_key: str) -> Tuple[Optional[Agent], Optional[Dict[str, Any]]]:
     """
-    Create a weather reporter worker.
+    Create a weather reporter agent.
     
     Args:
         api_key: Your API key
     
     Returns:
-        Tuple containing (worker, config) if successful, (None, None) otherwise
+        Tuple containing (agent, config) if successful, (None, None) otherwise
     """
     try:
-        # Create an agent to manage our worker
+        logger.debug(f"Creating agent with API key: {api_key[:8]}...")
+
+        # Create the agent
         agent = Agent(
             api_key=api_key,
-            name="Weather Assistant",
-            agent_description="An AI that reports weather and gives recommendations",
-            agent_goal="Help users make weather-informed decisions",
-            get_agent_state_fn=lambda x, y: {"status": "ready"}
+            goal="provide weather information and recommendations",
+            description="A helpful weather assistant that provides weather information and clothing recommendations",
+            world_info="This agent can provide weather information for New York, Miami, and Boston"
         )
 
-        # Define the worker configuration
-        worker_config = {
+        # Define the weather function
+        weather_fn = Function(
+            fn_name="get_weather",
+            fn_description="Get weather information and clothing recommendations for a city",
+            args=[
+                FunctionArgument(
+                    name="query",
+                    description="The city to get weather information for (New York, Miami, or Boston)",
+                    type="string"
+                )
+            ],
+            config=FunctionConfig(
+                method="get",
+                url="https://dylanburkey.com/assets/weather.json",
+                success_feedback="Here's the weather information",
+                error_feedback="Sorry, I couldn't get the weather information",
+                platform="example"
+            )
+        )
+        agent.custom_functions.append(weather_fn)
+        
+        logger.info(f"Created weather reporter agent")
+        
+        # Create a config dictionary for testing
+        config = {
             "id": f"weather_reporter_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             "description": "A smart weather reporting and recommendation system",
-            "instruction": """
-                This worker can:
-                1. Report current weather conditions
-                2. Provide clothing recommendations
-                3. Suggest activities based on weather
-                4. Track weather history
-            """,
-            "action_space": [
-                {
-                    "name": "get_weather",
-                    "description": "Get current weather conditions",
-                    "parameters": {
-                        "location": {
-                            "type": "string",
-                            "description": "City name or zip code"
-                        }
-                    }
-                },
-                {
-                    "name": "get_clothing_recommendation",
-                    "description": "Get clothing recommendations for current weather",
-                    "parameters": {
-                        "location": {
-                            "type": "string",
-                            "description": "City name or zip code"
-                        },
-                        "activity": {
-                            "type": "string",
-                            "description": "Planned activity (e.g., 'outdoor sports', 'casual walk')",
-                            "optional": True
-                        }
-                    }
-                },
-                {
-                    "name": "suggest_activities",
-                    "description": "Get activity suggestions based on weather",
-                    "parameters": {
-                        "location": {
-                            "type": "string",
-                            "description": "City name or zip code"
-                        },
-                        "preference": {
-                            "type": "string",
-                            "description": "Preferred type (indoor/outdoor)",
-                            "enum": ["indoor", "outdoor", "both"]
-                        }
-                    }
-                },
-                {
-                    "name": "get_weather_history",
-                    "description": "Get weather history for a location",
-                    "parameters": {
-                        "location": {
-                            "type": "string",
-                            "description": "City name or zip code"
-                        },
-                        "days": {
-                            "type": "integer",
-                            "description": "Number of days of history",
-                            "minimum": 1,
-                            "maximum": 7
-                        }
-                    }
-                }
-            ]
+            "supported_cities": ["New York", "Miami", "Boston"]
         }
-
-        # Create the worker
-        worker = agent.create_worker(worker_config)
-        logger.info(f"Created weather reporter worker with ID: {worker_config['id']}")
-        return worker, worker_config
+        
+        return agent, config
 
     except Exception as e:
-        logger.error(f"Failed to create weather reporter: {e}")
+        logger.error(f"Failed to create weather reporter: {e}", exc_info=True)
         return None, None
 
-def test_weather_reporter(worker: Any, config: Dict[str, Any]) -> bool:
+def test_weather_reporter(agent: Agent, config: Dict[str, Any]) -> bool:
     """
-    Run tests on the weather reporter worker.
+    Run tests on the weather reporter.
     
     Args:
-        worker: Worker instance to test
-        config: Worker configuration dictionary
+        agent: Agent instance to test
+        config: Configuration dictionary
     
     Returns:
         bool: True if all tests pass, False otherwise
     """
     test_cases = [
-        # Test weather reporting
         {
-            "action": "get_weather",
-            "parameters": {
-                "location": "New York, NY"
-            },
+            "query": "What's the weather like in New York?",
+            "task": "get weather information for New York",
             "description": "Getting weather for New York"
         },
-        # Test clothing recommendations
         {
-            "action": "get_clothing_recommendation",
-            "parameters": {
-                "location": "Miami, FL",
-                "activity": "beach day"
-            },
-            "description": "Getting clothing recommendations for Miami beach day"
+            "query": "What's the weather like in Miami?",
+            "task": "get weather information for Miami",
+            "description": "Getting weather for Miami"
         },
-        # Test activity suggestions
         {
-            "action": "suggest_activities",
-            "parameters": {
-                "location": "Seattle, WA",
-                "preference": "both"
-            },
-            "description": "Getting activity suggestions for Seattle"
-        },
-        # Test weather history
-        {
-            "action": "get_weather_history",
-            "parameters": {
-                "location": "Boston, MA",
-                "days": 3
-            },
-            "description": "Getting weather history for Boston"
+            "query": "What's the weather like in Boston?",
+            "task": "get weather information for Boston",
+            "description": "Getting weather for Boston"
         }
     ]
 
     for test in test_cases:
         try:
             logger.info(f"\nExecuting: {test['description']}")
-            result = worker.execute_action(
-                test["action"],
-                test["parameters"]
+            result = agent.react(
+                session_id=f"test-session-{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                platform="example",
+                event=f"message from user: {test['query']}",
+                task=test['task']
             )
-            logger.info(f"Result: {result}")
-            logger.info("✓ Test passed")
+            
+            if result:
+                logger.info(f"Result: {result}")
+                logger.info("✓ Test passed")
+            else:
+                logger.error("❌ No response from agent")
+                return False
 
         except Exception as e:
             logger.error(f"Test failed: {e}")
@@ -186,21 +165,30 @@ def test_weather_reporter(worker: Any, config: Dict[str, Any]) -> bool:
 
 def main():
     """Run the weather reporter example."""
-    # Replace with your API key
-    api_key = "your_api_key_here"
+    try:
+        # Get API key from environment
+        api_key = os.getenv("VIRTUALS_API_KEY")  # Note: Using VIRTUALS_API_KEY instead of GAME_API_KEY
+        if not api_key:
+            logger.error("VIRTUALS_API_KEY not found in environment")
+            return
 
-    # Create the weather reporter
-    worker, config = create_weather_reporter(api_key)
-    if not worker:
-        logger.error("Failed to create weather reporter")
-        return
+        logger.debug("Starting weather reporter creation")
+        # Create the weather reporter
+        agent, config = create_weather_reporter(api_key)
+        if not agent:
+            logger.error("Failed to create weather reporter")
+            return
 
-    # Test the worker
-    success = test_weather_reporter(worker, config)
-    if success:
-        logger.info("\n✨ All weather reporter tests passed!")
-    else:
-        logger.error("\n❌ Some weather reporter tests failed")
+        # Test the agent
+        logger.debug("Starting weather reporter tests")
+        success = test_weather_reporter(agent, config)
+        if success:
+            logger.info("\n✨ All weather reporter tests passed!")
+        else:
+            logger.error("\n❌ Some weather reporter tests failed")
+            
+    except Exception as e:
+        logger.error(f"Main execution failed: {e}", exc_info=True)
 
 if __name__ == "__main__":
     main()

@@ -5,7 +5,7 @@ This example demonstrates how to create a hosted agent that provides weather inf
 and clothing recommendations for different cities.
 
 Example usage:
-    python weather_example.py
+    python example_weather_agent.py
 """
 
 import os
